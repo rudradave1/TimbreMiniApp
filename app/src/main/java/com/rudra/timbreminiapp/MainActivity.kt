@@ -2,6 +2,8 @@ package com.rudra.timbreminiapp
 
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.PickVisualMediaRequest
@@ -23,15 +25,38 @@ class MainActivity : AppCompatActivity() {
     private var isVideo : Boolean = true
 
     private var player: ExoPlayer? = null
+    private var loadedMediaDurationMs: Long = 0L
+    private val positionHandler = Handler(Looper.getMainLooper())
+    private val boundaryCheckRunnable = object : Runnable {
+        override fun run() {
+            val p = player
+            val values = binding.rangeSlider.values
 
+            if (p != null && values.size >= 2 && p.isPlaying) {
+                val startMs = values[0].toLong()
+                val endMs = values[1].toLong()
+
+                // If current playback hits or exceeds the user's end thumb
+                if (p.currentPosition >= endMs) {
+                    p.pause()
+                    p.seekTo(startMs)
+                } else {
+                    // Keep checking every 100ms while playing
+                    positionHandler.postDelayed(this, 100)
+                }
+            }
+        }
+    }
     private val pickVideoLauncher = registerForActivityResult(
         ActivityResultContracts.PickVisualMedia()
-    ) {uri: Uri? ->
+    ) { uri: Uri? ->
         if (uri != null) {
             selectedUri = uri
             isVideo = true
+            loadedMediaDurationMs = 0L // Reset so the slider re-initializes for the new video
+
             player?.apply {
-                setMediaItem(MediaItem.fromUri(selectedUri!!))
+                setMediaItem(MediaItem.fromUri(uri))
                 prepare()
                 playWhenReady = true
             }
@@ -92,13 +117,32 @@ class MainActivity : AppCompatActivity() {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     if (playbackState == Player.STATE_READY) {
                         val totalDuration = exoPlayer.duration
-                        if(totalDuration > 0) {
+                        // Only set up the slider if duration is valid AND not already configured for this file
+                        if (totalDuration > 0 && totalDuration != loadedMediaDurationMs) {
+                            loadedMediaDurationMs = totalDuration
                             setupRangeSlider(totalDuration)
                         }
                     }
 
                 }
+                // Start/stop checking the end boundary based on play state
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (isPlaying) {
+                        val values = binding.rangeSlider.values
+                        if (values.size >= 2) {
+                            val startMs = values[0].toLong()
+                            val endMs = values[1].toLong()
 
+                            // If user presses play when scrubber is past or at the end cut, wrap to start
+                            if (exoPlayer.currentPosition >= endMs || exoPlayer.currentPosition < startMs) {
+                                exoPlayer.seekTo(startMs)
+                            }
+                        }
+                        positionHandler.post(boundaryCheckRunnable)
+                    } else {
+                        positionHandler.removeCallbacks(boundaryCheckRunnable)
+                    }
+                }
                 private fun setupRangeSlider(totalDuration: Long) {
                     val duration = totalDuration.toFloat()
 
@@ -123,7 +167,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        player?.release() // Free the native decoders
+        positionHandler.removeCallbacksAndMessages(null)
+        player?.release()
         player = null
     }
 }
