@@ -57,17 +57,16 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
 
-    implementation("androidx.constraintlayout:constraintlayout:2.2.2")
-    implementation("androidx.activity:activity-ktx:1.13.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
+    implementation("androidx.activity:activity-ktx:1.9.3")
 
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
-    implementation("androidx.media3:media3-exoplayer:1.11.1")
-    implementation("androidx.media3:media3-ui:1.11.1")
-
-    implementation("com.arthenica:ffmpeg-kit-full:6.0-2.LTS")
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
+    implementation("com.github.tanersener:ffmpeg-kit:v4.4")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)
