@@ -1,0 +1,70 @@
+package com.rudra.timbreminiapp.trimmer
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class MediaTrimmerTest {
+
+    @Test
+    fun `mp3 container maps to audio mpeg`() {
+        val (ext, mime) = deriveExtensionAndMime("mp3", isVideo = false)
+        assertEquals("mp3", ext)
+        assertEquals("audio/mpeg", mime)
+    }
+
+    @Test
+    fun `matroska container maps to mkv for video`() {
+        val (ext, mime) = deriveExtensionAndMime("matroska,webm", isVideo = true)
+        assertEquals("mkv", ext)
+        assertEquals("video/x-matroska", mime)
+    }
+
+    @Test
+    fun `matroska container maps to mka for audio`() {
+        val (ext, mime) = deriveExtensionAndMime("matroska,webm", isVideo = false)
+        assertEquals("mka", ext)
+        assertEquals("audio/x-matroska", mime)
+    }
+
+    @Test
+    fun `mp4 family audio maps to m4a`() {
+        val (ext, mime) = deriveExtensionAndMime("mov,mp4,m4a,3gp,3g2,mj2", isVideo = false)
+        assertEquals("m4a", ext)
+        assertEquals("audio/mp4", mime)
+    }
+
+    @Test
+    fun `unknown format falls back to mp4`() {
+        val (ext, mime) = deriveExtensionAndMime("", isVideo = true)
+        assertEquals("mp4", ext)
+        assertEquals("video/mp4", mime)
+    }
+
+    @Test
+    fun `mp4 command uses copy, fast seek and faststart`() {
+        val cmd = buildTrimCommand("/in.mp4", "/out.mp4", 12.0, 5.0, "mp4")
+        assertTrue(cmd.contains("-ss 12.0"))
+        assertTrue(cmd.contains("-t 5.0"))
+        assertTrue(cmd.contains("-c copy"))
+        assertTrue(cmd.contains("-avoid_negative_ts make_zero"))
+        assertTrue(cmd.contains("-movflags +faststart"))
+        assertTrue(cmd.startsWith("-y "))
+    }
+
+    @Test
+    fun `faststart only added for mp4 family`() {
+        val mkv = buildTrimCommand("/in.mkv", "/out.mkv", 0.0, 3.0, "mkv")
+        assertFalse(mkv.contains("-movflags +faststart"))
+
+        val mp3 = buildTrimCommand("/in.mp3", "/out.mp3", 0.0, 3.0, "mp3")
+        assertFalse(mp3.contains("-movflags +faststart"))
+    }
+
+    @Test
+    fun `paths with spaces and quotes are escaped`() {
+        val cmd = buildTrimCommand("/in folder/a'b.mp4", "/out.mp4", 1.0, 2.0, "mp4")
+        assertTrue(cmd.contains("'/in folder/a'\\''b.mp4'"))
+    }
+}

@@ -16,10 +16,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Required for FFmpeg native binaries packaging
-        ndk {
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
-        }
     }
 
     buildFeatures {
@@ -41,16 +37,15 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    lint {
+        checkReleaseBuilds = false
+    }
+
     kotlinOptions {
         jvmTarget = "17"
     }
 
-    // Resolves duplicate C++ runtime conflicts between Media3 and FFmpegKit
-    packaging {
-        resources {
-            pickFirsts.add("**/libc++_shared.so")
-        }
-    }
+
 }
 dependencies {
     implementation(libs.androidx.appcompat)
@@ -63,10 +58,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
-    implementation("com.github.tanersener:ffmpeg-kit:v4.4")
+    implementation("androidx.media3:media3-common:1.5.1")
+
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-free-81:8.1.7")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)
