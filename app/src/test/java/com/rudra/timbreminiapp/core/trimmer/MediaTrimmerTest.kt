@@ -1,4 +1,4 @@
-package com.rudra.timbreminiapp.trimmer
+package com.rudra.timbreminiapp.core.trimmer
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

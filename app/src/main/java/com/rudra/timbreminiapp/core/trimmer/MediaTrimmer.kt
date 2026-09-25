@@ -1,4 +1,4 @@
-package com.rudra.timbreminiapp.trimmer
+package com.rudra.timbreminiapp.core.trimmer
 
 import android.content.ContentValues
 import android.content.Context
@@ -10,8 +10,10 @@ import android.util.Log
 import androidx.core.content.FileProvider
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.FFmpegSession
+import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.FFprobeKit
 import com.arthenica.ffmpegkit.ReturnCode
+import com.rudra.timbreminiapp.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -20,7 +22,6 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.OutputStream
 import kotlin.coroutines.resume
-import kotlin.math.max
 
 private const val TAG = "MediaTrimmer"
 
@@ -29,6 +30,7 @@ class MediaTrimmer(private val context: Context) {
     data class TrimResult(
         val publicUri: Uri,
         val displayName: String,
+        val mimeType: String,
         val pathDescription: String,
         val sizeBytes: Long
     )
@@ -37,23 +39,19 @@ class MediaTrimmer(private val context: Context) {
         sourceUri: Uri,
         startMs: Long,
         endMs: Long,
-        isVideo: Boolean
+        isVideo: Boolean,
+        onProgress: (Float) -> Unit = {}
     ): Result<TrimResult> = withContext(Dispatchers.IO) {
         try {
-            // A content URI isn't a path FFmpeg can open, so resolve it to a
-            // local cache copy first; the probe below needs a real file too.
-            val inputTemp = copyToTemp(sourceUri) ?: throw TrimError.UnreadableSource()
+            // FFmpeg needs a real path, so copy the content URI into our cache.
+            val inputTemp = copyToTemp(sourceUri) ?: throw TrimError(R.string.error_read_failed)
             try {
-                val sourceMime = runCatching {
-                    context.contentResolver.getType(sourceUri)
-                }.getOrNull()
+                val sourceMime = runCatching { context.contentResolver.getType(sourceUri) }.getOrNull()
 
+                // Prefer the probed container; fall back to the picker MIME if probing fails.
                 val mediaInfo = runCatching {
                     FFprobeKit.getMediaInformation(inputTemp.absolutePath)?.mediaInformation
                 }.getOrNull()
-
-                // Prefer the probed container; when the probe fails, fall back
-                // to the MIME reported by the picker instead of guessing.
                 val formatName = mediaInfo?.format?.lowercase().orEmpty()
                 val (ext, mime) = if (formatName.isBlank() && sourceMime != null) {
                     deriveExtensionAndMimeFromMime(sourceMime, isVideo)
@@ -61,18 +59,15 @@ class MediaTrimmer(private val context: Context) {
                     deriveExtensionAndMime(formatName, isVideo)
                 }
 
-                val durationMs = max(0, endMs - startMs)
-                if (durationMs < 1000L) throw TrimError.InvalidRange()
+                if (endMs - startMs < 1000L) throw TrimError(R.string.error_min_length)
 
+                val clipMs = endMs - startMs
                 val startSec = startMs / 1000.0
-                val durationSec = durationMs / 1000.0
+                val durationSec = clipMs / 1000.0
                 val outTemp = File(context.cacheDir, "trimmed_out_${System.currentTimeMillis()}.$ext")
 
-                // Stream copy (-c copy) is instant and lossless, but the cut
-                // snaps to the nearest keyframe since nothing is re-encoded.
-                // -ss before -i does a fast seek instead of decoding the whole
-                // file, and +faststart relocates the moov atom so mp4/m4a/mov
-                // play while still downloading.
+                // Stream copy: instant and lossless, but the cut snaps to the nearest
+                // keyframe. -ss before -i seeks fast instead of decoding the whole file.
                 val cmd = buildTrimCommand(
                     input = inputTemp.absolutePath,
                     output = outTemp.absolutePath,
@@ -81,26 +76,26 @@ class MediaTrimmer(private val context: Context) {
                     ext = ext
                 )
 
-                when (val outcome = executeFfmpeg(cmd)) {
+                when (val outcome = executeFfmpeg(cmd, clipMs, onProgress)) {
                     is FfmpegOutcome.Success -> Unit
-                    is FfmpegOutcome.Cancelled -> {
-                        outTemp.delete()
-                        throw TrimError.Cancelled()
-                    }
                     is FfmpegOutcome.Failed -> {
                         outTemp.delete()
                         Log.e(TAG, "FFmpeg exit ${outcome.exitCode}: ${outcome.detail}")
-                        throw TrimError.ConversionFailed(outcome.detail)
+                        throw TrimError(R.string.error_unsupported, outcome.detail)
                     }
                 }
 
                 if (!outTemp.exists() || outTemp.length() == 0L) {
                     outTemp.delete()
-                    throw TrimError.EmptyOutput()
+                    throw TrimError(R.string.error_empty_output)
                 }
 
                 try {
-                    val result = saveToMediaStore(outTemp, mime, ext, isVideo)
+                    val result = try {
+                        saveToMediaStore(outTemp, mime, ext, isVideo)
+                    } catch (e: Exception) {
+                        throw TrimError(R.string.error_storage_write, e.message)
+                    }
                     Result.success(result)
                 } finally {
                     outTemp.delete()
@@ -117,21 +112,30 @@ class MediaTrimmer(private val context: Context) {
 
     private sealed class FfmpegOutcome {
         data object Success : FfmpegOutcome()
-        data object Cancelled : FfmpegOutcome()
         data class Failed(val exitCode: Long, val detail: String?) : FfmpegOutcome()
     }
 
-    private suspend fun executeFfmpeg(cmd: String): FfmpegOutcome =
+    private suspend fun executeFfmpeg(
+        cmd: String,
+        clipMs: Long,
+        onProgress: (Float) -> Unit
+    ): FfmpegOutcome =
         suspendCancellableCoroutine { cont ->
+            // The statistics callback is global, but exports are single-flight
+            // (Trim is disabled while one runs), so restore null on completion.
+            FFmpegKitConfig.enableStatisticsCallback { stats ->
+                onProgress(((stats?.time ?: 0L).toFloat() / clipMs).coerceIn(0f, 1f))
+            }
             val session: FFmpegSession = FFmpegKit.executeAsync(
                 cmd,
                 { s ->
+                    FFmpegKitConfig.enableStatisticsCallback(null)
                     if (cont.isActive) {
                         cont.resume(
-                            when {
-                                ReturnCode.isSuccess(s.returnCode) -> FfmpegOutcome.Success
-                                ReturnCode.isCancel(s.returnCode) -> FfmpegOutcome.Cancelled
-                                else -> FfmpegOutcome.Failed(
+                            if (ReturnCode.isSuccess(s.returnCode)) {
+                                FfmpegOutcome.Success
+                            } else {
+                                FfmpegOutcome.Failed(
                                     exitCode = s.returnCode.value.toLong(),
                                     detail = s.failStackTrace
                                 )
@@ -171,29 +175,28 @@ class MediaTrimmer(private val context: Context) {
         isVideo: Boolean
     ): TrimResult {
         val displayName = "trimmed_${System.currentTimeMillis()}.$ext"
-        // Q+ publishes the file to shared storage via MediaStore with no
-        // permissions asked; below Q we write to the app's own external
-        // files dir instead and share it through a FileProvider.
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val collection = if (isVideo) {
-                    MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                } else {
-                    MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                }
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, mime)
-                    put(MediaStore.MediaColumns.SIZE, tempFile.length())
-                    if (isVideo) {
-                        put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/TimbreMiniApp")
-                    } else {
-                        put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/TimbreMiniApp")
-                    }
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
-                }
-                val itemUri = context.contentResolver.insert(collection, values)
-                    ?: throw IllegalStateException("MediaStore insert returned null")
+
+        // Q+ publishes to shared storage via MediaStore (no permissions needed);
+        // below Q we write to our own external files dir and share via FileProvider.
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val collection = if (isVideo) {
+                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            } else {
+                MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            }
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.SIZE, tempFile.length())
+                put(
+                    MediaStore.MediaColumns.RELATIVE_PATH,
+                    (if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_MUSIC) + "/TimbreMiniApp"
+                )
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val itemUri = context.contentResolver.insert(collection, values)
+                ?: throw IllegalStateException("MediaStore insert returned null")
+            try {
                 val outStream = openOutputStreamWithRetry(itemUri)
                     ?: throw IllegalStateException("Couldn't open output stream for $itemUri")
                 outStream.use { stream ->
@@ -202,32 +205,32 @@ class MediaTrimmer(private val context: Context) {
                 values.clear()
                 values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                 context.contentResolver.update(itemUri, values, null, null)
-                val pathDesc = if (isVideo) "Movies/TimbreMiniApp/$displayName" else "Music/TimbreMiniApp/$displayName"
-                TrimResult(itemUri, displayName, pathDesc, tempFile.length())
-            } else {
-                val subDir = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_MUSIC
-                val outDir = File(context.getExternalFilesDir(subDir), "TimbreMiniApp")
-                if (!outDir.exists()) outDir.mkdirs()
-                val outFile = File(outDir, displayName)
-                FileInputStream(tempFile).use { input ->
-                    outFile.outputStream().use { output -> input.copyTo(output) }
-                }
-                val shareUri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    outFile
-                )
-                TrimResult(shareUri, displayName, outFile.absolutePath, outFile.length())
+            } catch (e: Exception) {
+                // Don't leave an invisible IS_PENDING=1 row behind on failure.
+                runCatching { context.contentResolver.delete(itemUri, null, null) }
+                throw e
             }
-        } catch (e: Exception) {
-            throw TrimError.StorageWriteFailed(e)
+            val pathDesc = if (isVideo) "Movies/TimbreMiniApp/$displayName" else "Music/TimbreMiniApp/$displayName"
+            TrimResult(itemUri, displayName, mime, pathDesc, tempFile.length())
+        } else {
+            val subDir = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_MUSIC
+            val outDir = File(context.getExternalFilesDir(subDir), "TimbreMiniApp")
+            if (!outDir.exists()) outDir.mkdirs()
+            val outFile = File(outDir, displayName)
+            FileInputStream(tempFile).use { input ->
+                outFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            val shareUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                outFile
+            )
+            TrimResult(shareUri, displayName, mime, outFile.absolutePath, outFile.length())
         }
     }
 
     private fun openOutputStreamWithRetry(itemUri: Uri): OutputStream? {
-        // Samsung's MediaProvider can briefly hand out a dead stream right
-        // after insert() on Android 13/14, so give the file a moment and try
-        // again before giving up.
+        // Some devices hand out a dead stream right after insert(); retry briefly.
         repeat(3) { attempt ->
             val stream = runCatching {
                 context.contentResolver.openOutputStream(itemUri, "w")
@@ -248,7 +251,7 @@ internal fun deriveExtensionAndMime(formatName: String, isVideo: Boolean): Pair<
         formatName.contains("matroska") && !isVideo -> "mka" to "audio/x-matroska"
         formatName.contains("webm") && isVideo -> "webm" to "video/webm"
         formatName.contains("webm") && !isVideo -> "webm" to "audio/webm"
-        formatName.contains("mp3") || formatName.startsWith("mp3") -> "mp3" to "audio/mpeg"
+        formatName.contains("mp3") -> "mp3" to "audio/mpeg"
         formatName.contains("ogg") -> "ogg" to (if (isVideo) "video/ogg" else "audio/ogg")
         formatName.contains("wav") -> "wav" to "audio/x-wav"
         formatName.contains("flac") -> "flac" to "audio/flac"

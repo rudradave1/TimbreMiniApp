@@ -1,7 +1,0 @@
-<resources>
-    <!-- Change parent to NoActionBar -->
-    <style name="Theme.TimbreMiniApp" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize colors if desired -->
-        <item name="colorPrimary">@color/purple_500</item>
-    </style>
-</resources>

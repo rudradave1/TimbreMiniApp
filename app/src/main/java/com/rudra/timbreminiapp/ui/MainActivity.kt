@@ -1,4 +1,4 @@
-package com.rudra.timbreminiapp
+package com.rudra.timbreminiapp.ui
 
 import android.content.Intent
 import android.net.Uri
@@ -16,16 +16,22 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.RangeSlider
+import com.rudra.timbreminiapp.core.util.TimeFormatter
 import com.rudra.timbreminiapp.databinding.ActivityMainBinding
-import com.rudra.timbreminiapp.util.TimeFormatter
+import com.rudra.timbreminiapp.presentation.MainViewModel
+import com.rudra.timbreminiapp.presentation.TrimUiState
+import com.rudra.timbreminiapp.R
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -74,21 +80,18 @@ class MainActivity : AppCompatActivity() {
         initPlayer()
         setupListeners()
         observeUiState()
-
-        viewModel.sessionState?.let { restoredSession ->
-            restoreMediaSession(restoredSession)
-        }
     }
 
     private fun setupWindowInsets() {
+        // The status region (which includes the camera cutout) is drawn as a
+        // darker-red backdrop behind the system bar; the app bar itself sits
+        // below it so its title stays vertically centered and clear of icons.
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(
-                systemBars.left + 16,
-                systemBars.top + 16,
-                systemBars.right + 16,
-                systemBars.bottom + 16
-            )
+            val params = binding.vStatusBarBackdrop.layoutParams
+            params.height = systemBars.top
+            binding.vStatusBarBackdrop.layoutParams = params
+            view.updatePadding(bottom = systemBars.bottom + 16)
             insets
         }
     }
@@ -126,6 +129,23 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         positionHandler.removeCallbacks(boundaryCheckRunnable)
                     }
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    exoPlayer.stop()
+                    exoPlayer.clearMediaItems()
+                    positionHandler.removeCallbacks(boundaryCheckRunnable)
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.error_playback,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    binding.layoutEmptyState.isVisible = true
+                    binding.rangeSlider.isEnabled = false
+                    binding.btnTrim.isEnabled = false
+                    binding.tvStartTime.text = getString(R.string.time_start_placeholder)
+                    binding.tvEndTime.text = getString(R.string.time_end_placeholder)
+                    binding.tvSelectedDuration.text = getString(R.string.time_clip_placeholder)
                 }
             })
         }
@@ -205,8 +225,30 @@ class MainActivity : AppCompatActivity() {
                     binding.btnSelectVideo.isEnabled = !loading
                     binding.btnSelectAudio.isEnabled = !loading
                     if (loading) {
+                        val progress = state as TrimUiState.Loading
                         binding.btnTrim.isEnabled = false
                         binding.rangeSlider.isEnabled = false
+                        // Stay indeterminate until FFmpeg reports anything; a fast
+                        // stream copy may finish before the first statistic arrives.
+                        binding.progressIndicator.isIndeterminate =
+                            progress.fraction <= 0f || progress.fraction >= 1f
+                        binding.progressIndicator.progress =
+                            (progress.fraction * 100).toInt().coerceIn(0, 100)
+                        binding.tvExportProgress.text = if (progress.clipDurationMs > 0L) {
+                            getString(
+                                R.string.export_progress_format,
+                                TimeFormatter.formatMs((progress.fraction * progress.clipDurationMs).toLong()),
+                                TimeFormatter.formatMs(progress.clipDurationMs)
+                            )
+                        } else {
+                            getString(R.string.export_progress)
+                        }
+                    } else {
+                        val session = viewModel.sessionState
+                        if (session != null && session.totalDurationMs > 0L) {
+                            binding.rangeSlider.isEnabled = true
+                            binding.btnTrim.isEnabled = (session.endMs - session.startMs >= 1000L)
+                        }
                     }
 
                     when (state) {
@@ -223,7 +265,8 @@ class MainActivity : AppCompatActivity() {
                             ).show()
                             viewModel.resetState()
                         }
-                        TrimUiState.Idle, TrimUiState.Loading -> Unit
+                        TrimUiState.Idle -> Unit
+                        is TrimUiState.Loading -> Unit
                     }
                 }
             }
@@ -236,7 +279,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             String.format(Locale.US, "%.0f KB", state.sizeBytes / 1024.0)
         }
-        MaterialAlertDialogBuilder(this)
+        val actions = layoutInflater.inflate(R.layout.dialog_trim_actions, null)
+        val dialog = MaterialAlertDialogBuilder(this)
             .setTitle(R.string.trim_complete_title)
             .setMessage(
                 getString(
@@ -246,14 +290,43 @@ class MainActivity : AppCompatActivity() {
                     state.pathDescription
                 )
             )
-            .setPositiveButton(R.string.action_share) { _, _ ->
-                shareFile(state.publicUri, isVideo)
-            }
-            .setNegativeButton(R.string.action_preview) { _, _ ->
-                loadMedia(state.publicUri, isVideo)
-            }
-            .setNeutralButton(R.string.action_dismiss, null)
-            .show()
+            .setView(actions)
+            .create()
+
+        actions.findViewById<MaterialButton>(R.id.btnOpenWith).setOnClickListener {
+            dialog.dismiss()
+            openWithFile(state)
+        }
+        actions.findViewById<MaterialButton>(R.id.btnPreview).setOnClickListener {
+            dialog.dismiss()
+            loadMedia(state.publicUri, isVideo)
+        }
+        actions.findViewById<MaterialButton>(R.id.btnShare).setOnClickListener {
+            dialog.dismiss()
+            shareFile(state.publicUri, isVideo)
+        }
+        actions.findViewById<MaterialButton>(R.id.btnDone).setOnClickListener {
+            dialog.dismiss()
+        }
+        dialog.show()
+    }
+
+    private fun openWithFile(state: TrimUiState.Success) {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(state.publicUri, state.mimeType)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            startActivity(
+                Intent.createChooser(intent, getString(R.string.open_with_chooser_title))
+            )
+        } catch (e: Exception) {
+            Toast.makeText(
+                this,
+                R.string.error_open_failed,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     private fun shareFile(contentUri: Uri, isVideo: Boolean) {
@@ -286,25 +359,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun restoreMediaSession(session: MediaSessionState) {
-        binding.layoutEmptyState.visibility = View.GONE
-
-        player?.apply {
-            setMediaItem(MediaItem.fromUri(session.uri))
-            prepare()
-            seekTo(session.playbackPositionMs)
-            playWhenReady = false
-        }
-
-        if (session.totalDurationMs > 0L) {
-            setupRangeSlider(
-                totalDurationMs = session.totalDurationMs,
-                startMs = session.startMs,
-                endMs = session.endMs
-            )
-        }
-    }
-
     private fun setupRangeSlider(totalDurationMs: Long, startMs: Long, endMs: Long) {
         val durationFloat = totalDurationMs.toFloat()
         binding.rangeSlider.apply {
@@ -332,10 +386,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        player?.let {
-            viewModel.savePlaybackPosition(it.currentPosition)
-            it.pause()
-        }
+        player?.pause()
     }
 
     override fun onDestroy() {

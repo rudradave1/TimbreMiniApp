@@ -23,7 +23,7 @@
         </provider>
 
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.MainActivity"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize"
             android:exported="true">
             <intent-filter>

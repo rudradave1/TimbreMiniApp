@@ -5,29 +5,41 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?android:attr/colorBackground">
+    android:background="@color/app_background">
 
-    <TextView
-        android:id="@+id/tvTitle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/app_title_short"
-        android:textSize="22sp"
-        android:textStyle="bold"
+    <View
+        android:id="@+id/vStatusBarBackdrop"
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:background="@color/colorPrimaryDark"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:background="@color/colorPrimary"
+        android:minHeight="?attr/actionBarSize"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/vStatusBarBackdrop"
+        app:title="@string/app_title_short"
+        app:titleTextAppearance="@style/TextAppearance.Timbre.Title" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSelectVideo"
         android:layout_width="0dp"
         android:layout_height="48dp"
+        android:layout_marginStart="16dp"
         android:layout_marginTop="12dp"
         android:layout_marginEnd="6dp"
         android:text="@string/select_video"
         app:cornerRadius="10dp"
         app:layout_constraintEnd_toStartOf="@id/btnSelectAudio"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/tvTitle" />
+        app:layout_constraintTop_toBottomOf="@id/toolbar" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSelectAudio"
@@ -36,22 +48,26 @@
         android:layout_height="48dp"
         android:layout_marginStart="6dp"
         android:layout_marginTop="12dp"
+        android:layout_marginEnd="16dp"
         android:text="@string/select_audio"
         app:cornerRadius="10dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/btnSelectVideo"
-        app:layout_constraintTop_toBottomOf="@id/tvTitle" />
+        app:layout_constraintTop_toBottomOf="@id/toolbar" />
 
 
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/playerCard"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:layout_marginStart="16dp"
         android:layout_marginTop="12dp"
+        android:layout_marginEnd="16dp"
         android:layout_marginBottom="12dp"
         app:cardCornerRadius="16dp"
-        app:cardElevation="0dp"
-        app:strokeColor="#1F000000"
+        app:cardBackgroundColor="@color/card"
+        app:cardElevation="2dp"
+        app:strokeColor="@color/card_stroke"
         app:strokeWidth="1dp"
         app:layout_constraintBottom_toTopOf="@id/trimCard"
         app:layout_constraintEnd_toEndOf="parent"
@@ -72,7 +88,7 @@
             android:id="@+id/layoutEmptyState"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="?attr/colorSurfaceVariant"
+            android:background="@color/card_inset"
             android:gravity="center"
             android:orientation="vertical"
             android:padding="24dp">
@@ -80,15 +96,16 @@
             <ImageView
                 android:layout_width="56dp"
                 android:layout_height="56dp"
-                android:alpha="0.5"
+                android:alpha="0.9"
                 android:src="@android:drawable/ic_menu_upload_you_tube"
-                app:tint="?android:attr/textColorSecondary" />
+                app:tint="@color/icon_on_card" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:text="@string/empty_title"
+                android:textColor="@color/text_on_card"
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
@@ -98,7 +115,7 @@
                 android:layout_marginTop="4dp"
                 android:gravity="center"
                 android:text="@string/empty_hint"
-                android:textColor="?android:attr/textColorSecondary"
+                android:textColor="@color/text_on_card_secondary"
                 android:textSize="13sp" />
         </LinearLayout>
 
@@ -120,12 +137,14 @@
                 android:orientation="vertical">
 
                 <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:id="@+id/progressIndicator"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:indeterminate="true"
                     app:indicatorColor="@android:color/white" />
 
                 <TextView
+                    android:id="@+id/tvExportProgress"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
@@ -143,9 +162,12 @@
         android:id="@+id/trimCard"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
         android:layout_marginBottom="16dp"
         app:cardCornerRadius="16dp"
-        app:cardElevation="1dp"
+        app:cardBackgroundColor="@color/card"
+        app:cardElevation="2dp"
         app:contentPadding="16dp"
         app:layout_constraintBottom_toTopOf="@id/btnTrim"
         app:layout_constraintEnd_toEndOf="parent"
@@ -162,6 +184,7 @@
                 android:layout_marginTop="4dp"
                 android:ellipsize="end"
                 android:maxLines="1"
+                android:textColor="@color/text_on_card"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:visibility="gone"
@@ -175,7 +198,7 @@
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.08"
                 android:text="@string/trim_bounds_label"
-                android:textColor="?android:attr/textColorSecondary"
+                android:textColor="@color/text_on_card_secondary"
                 android:textSize="11sp"
                 android:textStyle="bold"
                 app:layout_constraintStart_toStartOf="parent"
@@ -187,6 +210,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="@string/time_start_placeholder"
+                android:textColor="@color/text_on_card"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 app:layout_constraintStart_toStartOf="parent"
@@ -215,6 +239,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="@string/time_end_placeholder"
+                android:textColor="@color/text_on_card"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 app:layout_constraintEnd_toEndOf="parent"
@@ -229,7 +254,10 @@
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/tvStartTime" />
+                app:layout_constraintTop_toBottomOf="@id/tvStartTime"
+                app:thumbColor="@color/colorPrimary"
+                app:trackColorActive="@color/colorPrimary"
+                app:trackColorInactive="@color/slider_inactive" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
 
@@ -239,6 +267,8 @@
         android:id="@+id/btnTrim"
         android:layout_width="0dp"
         android:layout_height="52dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
         android:enabled="false"
         android:text="@string/trim_button"
         android:textSize="15sp"

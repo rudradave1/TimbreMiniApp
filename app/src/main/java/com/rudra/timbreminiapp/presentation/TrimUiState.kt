@@ -1,14 +1,18 @@
-package com.rudra.timbreminiapp
+package com.rudra.timbreminiapp.presentation
 
 import android.net.Uri
 import androidx.annotation.StringRes
 
 sealed interface TrimUiState {
     data object Idle : TrimUiState
-    data object Loading : TrimUiState
+    data class Loading(
+        val fraction: Float = 0f,
+        val clipDurationMs: Long = 0L
+    ) : TrimUiState
     data class Success(
         val displayName: String,
         val publicUri: Uri,
+        val mimeType: String,
         val pathDescription: String,
         val sizeBytes: Long
     ) : TrimUiState

@@ -1,7 +1,17 @@
 <resources>
-    <!-- Change parent to NoActionBar -->
-    <style name="Theme.TimbreMiniApp" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize colors if desired -->
-        <item name="colorPrimary">@color/purple_500</item>
+    <style name="Theme.TimbreMiniApp" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorOnPrimary">@color/colorOnPrimary</item>
+        <item name="colorPrimaryContainer">@color/colorPrimaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/colorOnPrimaryContainer</item>
+        <item name="colorSecondaryContainer">@color/colorSecondaryContainer</item>
+        <item name="colorOnSecondaryContainer">@color/colorOnSecondaryContainer</item>
+        <item name="android:colorBackground">@color/app_background</item>
+    </style>
+
+    <style name="TextAppearance.Timbre.Title" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:textColor">@color/white</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:textStyle">bold</item>
     </style>
 </resources>

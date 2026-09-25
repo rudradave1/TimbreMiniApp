@@ -1,11 +1,13 @@
-package com.rudra.timbreminiapp
+package com.rudra.timbreminiapp.presentation
 
 import android.app.Application
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.rudra.timbreminiapp.trimmer.MediaTrimmer
+import com.rudra.timbreminiapp.core.trimmer.MediaTrimmer
+import com.rudra.timbreminiapp.core.trimmer.TrimError
+import com.rudra.timbreminiapp.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,8 +19,7 @@ data class MediaSessionState(
     val sourceName: String = "",
     val totalDurationMs: Long = 0L,
     val startMs: Long = 0L,
-    val endMs: Long = 0L,
-    val playbackPositionMs: Long = 0L
+    val endMs: Long = 0L
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -50,30 +51,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sessionState = sessionState?.copy(startMs = startMs, endMs = endMs)
     }
 
-    fun savePlaybackPosition(positionMs: Long) {
-        sessionState = sessionState?.copy(playbackPositionMs = positionMs)
-    }
-
     fun trim() {
         val session = sessionState ?: return
         viewModelScope.launch {
-            _uiState.value = TrimUiState.Loading
+            val clipMs = (session.endMs - session.startMs).coerceAtLeast(0L)
+            _uiState.value = TrimUiState.Loading(0f, clipMs)
             val result = trimmer.trimMedia(
                 sourceUri = session.uri,
                 startMs = session.startMs,
                 endMs = session.endMs,
-                isVideo = session.isVideo
+                isVideo = session.isVideo,
+                onProgress = { fraction ->
+                    if (_uiState.value is TrimUiState.Loading) {
+                        _uiState.value = TrimUiState.Loading(fraction, clipMs)
+                    }
+                }
             )
             _uiState.value = result.fold(
                 onSuccess = { r ->
                     TrimUiState.Success(
                         displayName = r.displayName,
                         publicUri = r.publicUri,
+                        mimeType = r.mimeType,
                         pathDescription = r.pathDescription,
                         sizeBytes = r.sizeBytes
                     )
                 },
-                onFailure = { TrimUiState.Error(it.toUserMessageRes()) }
+                onFailure = { e ->
+                    TrimUiState.Error((e as? TrimError)?.messageRes ?: R.string.error_generic)
+                }
             )
         }
     }
@@ -84,8 +90,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
                 ?.use { cursor ->
                     val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (index >= 0 && cursor.moveToFirst()) cursor.getString(index).orEmpty() else ""
-                }.orEmpty()
+                    if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else ""
+                } ?: ""
         } catch (_: Exception) {
             ""
         }
