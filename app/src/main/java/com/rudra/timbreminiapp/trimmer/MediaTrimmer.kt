@@ -6,18 +6,23 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import androidx.core.content.FileProvider
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.FFmpegSession
 import com.arthenica.ffmpegkit.FFprobeKit
 import com.arthenica.ffmpegkit.ReturnCode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
+import java.io.OutputStream
 import kotlin.coroutines.resume
 import kotlin.math.max
+
+private const val TAG = "MediaTrimmer"
 
 class MediaTrimmer(private val context: Context) {
 
@@ -37,86 +42,101 @@ class MediaTrimmer(private val context: Context) {
         try {
             // A content URI isn't a path FFmpeg can open, so resolve it to a
             // local cache copy first; the probe below needs a real file too.
-            val inputTemp = copyToTemp(sourceUri) ?: return@withContext Result.failure(
-                IllegalStateException("Failed to read input file")
-            )
+            val inputTemp = copyToTemp(sourceUri) ?: throw TrimError.UnreadableSource()
+            try {
+                val sourceMime = runCatching {
+                    context.contentResolver.getType(sourceUri)
+                }.getOrNull()
 
-            val mediaInfo = runCatching {
-                FFprobeKit.getMediaInformation(inputTemp.absolutePath)?.mediaInformation
-            }.getOrNull()
+                val mediaInfo = runCatching {
+                    FFprobeKit.getMediaInformation(inputTemp.absolutePath)?.mediaInformation
+                }.getOrNull()
 
-            val formatName = mediaInfo?.format?.lowercase() ?: ""
-            val (ext, mime) = deriveExtensionAndMime(formatName, isVideo)
+                // Prefer the probed container; when the probe fails, fall back
+                // to the MIME reported by the picker instead of guessing.
+                val formatName = mediaInfo?.format?.lowercase().orEmpty()
+                val (ext, mime) = if (formatName.isBlank() && sourceMime != null) {
+                    deriveExtensionAndMimeFromMime(sourceMime, isVideo)
+                } else {
+                    deriveExtensionAndMime(formatName, isVideo)
+                }
 
-            val durationMs = max(0, endMs - startMs)
-            if (durationMs < 1000L) {
-                inputTemp.delete()
-                return@withContext Result.failure(IllegalArgumentException("Invalid trim range"))
-            }
+                val durationMs = max(0, endMs - startMs)
+                if (durationMs < 1000L) throw TrimError.InvalidRange()
 
-            val startSec = (startMs / 1000.0)
-            val durationSec = (durationMs / 1000.0)
-            val outTemp = File(context.cacheDir, "trimmed_out_${System.currentTimeMillis()}.$ext")
+                val startSec = startMs / 1000.0
+                val durationSec = durationMs / 1000.0
+                val outTemp = File(context.cacheDir, "trimmed_out_${System.currentTimeMillis()}.$ext")
 
-            // Stream copy (-c copy) is instant and lossless, but the cut snaps
-            // to the nearest keyframe since nothing is re-encoded. -ss before
-            // -i does a fast seek instead of decoding the whole file, and
-            // +faststart relocates the moov atom so mp4/m4a/mov play while
-            // still downloading.
-            val cmd = buildTrimCommand(
-                input = inputTemp.absolutePath,
-                output = outTemp.absolutePath,
-                startSec = startSec,
-                durationSec = durationSec,
-                ext = ext
-            )
-
-            val sessionResult = executeFfmpeg(cmd)
-            inputTemp.delete()
-
-            if (!sessionResult.success) {
-                outTemp.delete()
-                return@withContext Result.failure(
-                    sessionResult.error ?: IllegalStateException("FFmpeg trim failed")
+                // Stream copy (-c copy) is instant and lossless, but the cut
+                // snaps to the nearest keyframe since nothing is re-encoded.
+                // -ss before -i does a fast seek instead of decoding the whole
+                // file, and +faststart relocates the moov atom so mp4/m4a/mov
+                // play while still downloading.
+                val cmd = buildTrimCommand(
+                    input = inputTemp.absolutePath,
+                    output = outTemp.absolutePath,
+                    startSec = startSec,
+                    durationSec = durationSec,
+                    ext = ext
                 )
+
+                when (val outcome = executeFfmpeg(cmd)) {
+                    is FfmpegOutcome.Success -> Unit
+                    is FfmpegOutcome.Cancelled -> {
+                        outTemp.delete()
+                        throw TrimError.Cancelled()
+                    }
+                    is FfmpegOutcome.Failed -> {
+                        outTemp.delete()
+                        Log.e(TAG, "FFmpeg exit ${outcome.exitCode}: ${outcome.detail}")
+                        throw TrimError.ConversionFailed(outcome.detail)
+                    }
+                }
+
+                if (!outTemp.exists() || outTemp.length() == 0L) {
+                    outTemp.delete()
+                    throw TrimError.EmptyOutput()
+                }
+
+                try {
+                    val result = saveToMediaStore(outTemp, mime, ext, isVideo)
+                    Result.success(result)
+                } finally {
+                    outTemp.delete()
+                }
+            } finally {
+                inputTemp.delete()
             }
-
-            if (!outTemp.exists() || outTemp.length() == 0L) {
-                outTemp.delete()
-                return@withContext Result.failure(IllegalStateException("Trimmed file is empty"))
-            }
-
-            val public = saveToMediaStore(outTemp, mime, ext, isVideo)
-            outTemp.delete()
-
-            public.fold(
-                onSuccess = { Result.success(it) },
-                onFailure = { Result.failure(it) }
-            )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    private suspend fun executeFfmpeg(cmd: String): FfmpegExecResult =
+    private sealed class FfmpegOutcome {
+        data object Success : FfmpegOutcome()
+        data object Cancelled : FfmpegOutcome()
+        data class Failed(val exitCode: Long, val detail: String?) : FfmpegOutcome()
+    }
+
+    private suspend fun executeFfmpeg(cmd: String): FfmpegOutcome =
         suspendCancellableCoroutine { cont ->
             val session: FFmpegSession = FFmpegKit.executeAsync(
                 cmd,
                 { s ->
                     if (cont.isActive) {
-                        val rc = s.returnCode
-                        if (ReturnCode.isSuccess(rc)) {
-                            cont.resume(FfmpegExecResult(true, null))
-                        } else {
-                            val exitCode = s.returnCode.value
-                            val detail = s.failStackTrace
-                            val message = when {
-                                ReturnCode.isCancel(s.returnCode) -> "Trim cancelled"
-                                !detail.isNullOrBlank() -> detail.takeLast(300)
-                                else -> "FFmpeg exited with code $exitCode"
+                        cont.resume(
+                            when {
+                                ReturnCode.isSuccess(s.returnCode) -> FfmpegOutcome.Success
+                                ReturnCode.isCancel(s.returnCode) -> FfmpegOutcome.Cancelled
+                                else -> FfmpegOutcome.Failed(
+                                    exitCode = s.returnCode.value.toLong(),
+                                    detail = s.failStackTrace
+                                )
                             }
-                            cont.resume(FfmpegExecResult(false, IllegalStateException(message)))
-                        }
+                        )
                     }
                 }
             )
@@ -124,11 +144,6 @@ class MediaTrimmer(private val context: Context) {
                 FFmpegKit.cancel(session.sessionId)
             }
         }
-
-    private data class FfmpegExecResult(
-        val success: Boolean,
-        val error: Throwable?
-    )
 
     private fun copyToTemp(sourceUri: Uri): File? {
         return try {
@@ -154,12 +169,12 @@ class MediaTrimmer(private val context: Context) {
         mime: String,
         ext: String,
         isVideo: Boolean
-    ): Result<TrimResult> {
+    ): TrimResult {
         val displayName = "trimmed_${System.currentTimeMillis()}.$ext"
+        // Q+ publishes the file to shared storage via MediaStore with no
+        // permissions asked; below Q we write to the app's own external
+        // files dir instead and share it through a FileProvider.
         return try {
-            // Q+ publishes the file to shared storage via MediaStore with no
-            // permissions asked; below Q we write to the app's own external
-            // files dir instead and share it through a FileProvider.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val collection = if (isVideo) {
                     MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -178,9 +193,9 @@ class MediaTrimmer(private val context: Context) {
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
                 val itemUri = context.contentResolver.insert(collection, values)
-                    ?: return Result.failure(IllegalStateException("Failed to create media entry"))
-                val outStream = context.contentResolver.openOutputStream(itemUri, "w")
-                    ?: return Result.failure(IllegalStateException("Failed to open output stream"))
+                    ?: throw IllegalStateException("MediaStore insert returned null")
+                val outStream = openOutputStreamWithRetry(itemUri)
+                    ?: throw IllegalStateException("Couldn't open output stream for $itemUri")
                 outStream.use { stream ->
                     FileInputStream(tempFile).use { input -> input.copyTo(stream) }
                 }
@@ -188,7 +203,7 @@ class MediaTrimmer(private val context: Context) {
                 values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                 context.contentResolver.update(itemUri, values, null, null)
                 val pathDesc = if (isVideo) "Movies/TimbreMiniApp/$displayName" else "Music/TimbreMiniApp/$displayName"
-                Result.success(TrimResult(itemUri, displayName, pathDesc, tempFile.length()))
+                TrimResult(itemUri, displayName, pathDesc, tempFile.length())
             } else {
                 val subDir = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_MUSIC
                 val outDir = File(context.getExternalFilesDir(subDir), "TimbreMiniApp")
@@ -202,14 +217,30 @@ class MediaTrimmer(private val context: Context) {
                     "${context.packageName}.fileprovider",
                     outFile
                 )
-                Result.success(TrimResult(shareUri, displayName, outFile.absolutePath, outFile.length()))
+                TrimResult(shareUri, displayName, outFile.absolutePath, outFile.length())
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            throw TrimError.StorageWriteFailed(e)
         }
     }
 
+    private fun openOutputStreamWithRetry(itemUri: Uri): OutputStream? {
+        // Samsung's MediaProvider can briefly hand out a dead stream right
+        // after insert() on Android 13/14, so give the file a moment and try
+        // again before giving up.
+        repeat(3) { attempt ->
+            val stream = runCatching {
+                context.contentResolver.openOutputStream(itemUri, "w")
+            }.getOrNull()
+            if (stream != null) return stream
+            if (attempt < 2) {
+                Log.w(TAG, "MediaStore write-open failed on attempt ${attempt + 1}, retrying")
+                Thread.sleep(75L)
+            }
+        }
+        return null
     }
+}
 
 internal fun deriveExtensionAndMime(formatName: String, isVideo: Boolean): Pair<String, String> {
     return when {
@@ -225,6 +256,23 @@ internal fun deriveExtensionAndMime(formatName: String, isVideo: Boolean): Pair<
         formatName.contains("mp4") || formatName.contains("mov") || formatName.contains("m4a") -> {
             if (isVideo) "mp4" to "video/mp4" else "m4a" to "audio/mp4"
         }
+        else -> if (isVideo) "mp4" to "video/mp4" else "m4a" to "audio/mp4"
+    }
+}
+
+internal fun deriveExtensionAndMimeFromMime(mime: String, isVideo: Boolean): Pair<String, String> {
+    return when (mime.lowercase()) {
+        "video/mp4", "video/x-m4v" -> "mp4" to "video/mp4"
+        "video/x-matroska" -> "mkv" to "video/x-matroska"
+        "video/webm" -> "webm" to "video/webm"
+        "video/quicktime" -> "mov" to "video/quicktime"
+        "audio/mpeg", "audio/mp3" -> "mp3" to "audio/mpeg"
+        "audio/mp4", "audio/x-m4a" -> "m4a" to "audio/mp4"
+        "audio/x-matroska" -> "mka" to "audio/x-matroska"
+        "audio/ogg", "application/ogg" -> "ogg" to "audio/ogg"
+        "audio/wav", "audio/x-wav" -> "wav" to "audio/x-wav"
+        "audio/flac" -> "flac" to "audio/flac"
+        "audio/aac" -> "aac" to "audio/aac"
         else -> if (isVideo) "mp4" to "video/mp4" else "m4a" to "audio/mp4"
     }
 }

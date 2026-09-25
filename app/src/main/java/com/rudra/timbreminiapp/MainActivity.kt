@@ -151,15 +151,24 @@ class MainActivity : AppCompatActivity() {
 
                 if (selectedDuration < 1000L) {
                     binding.btnTrim.isEnabled = false
-                    binding.tvSelectedDuration.text = "Min 1s"
+                    binding.tvSelectedDuration.text = getString(R.string.min_clip_hint)
                     if (fromUser) {
                         slider.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                     }
                 } else {
                     binding.btnTrim.isEnabled = true
-                    binding.tvStartTime.text = "Start: ${TimeFormatter.formatMs(start)}"
-                    binding.tvEndTime.text = "End: ${TimeFormatter.formatMs(end)}"
-                    binding.tvSelectedDuration.text = "Clip: ${TimeFormatter.formatMs(selectedDuration)}"
+                    binding.tvStartTime.text = getString(
+                        R.string.time_start_format,
+                        TimeFormatter.formatMs(start)
+                    )
+                    binding.tvEndTime.text = getString(
+                        R.string.time_end_format,
+                        TimeFormatter.formatMs(end)
+                    )
+                    binding.tvSelectedDuration.text = getString(
+                        R.string.time_clip_format,
+                        TimeFormatter.formatMs(selectedDuration)
+                    )
                 }
             }
         }
@@ -191,8 +200,14 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState.collect { state ->
-                    binding.layoutLoading.isVisible = state is TrimUiState.Loading
-                    binding.btnTrim.isEnabled = state !is TrimUiState.Loading
+                    val loading = state is TrimUiState.Loading
+                    binding.layoutLoading.isVisible = loading
+                    binding.btnSelectVideo.isEnabled = !loading
+                    binding.btnSelectAudio.isEnabled = !loading
+                    if (loading) {
+                        binding.btnTrim.isEnabled = false
+                        binding.rangeSlider.isEnabled = false
+                    }
 
                     when (state) {
                         is TrimUiState.Success -> {
@@ -201,11 +216,14 @@ class MainActivity : AppCompatActivity() {
                             viewModel.resetState()
                         }
                         is TrimUiState.Error -> {
-                            Toast.makeText(this@MainActivity, state.message, Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                this@MainActivity,
+                                getString(state.messageRes),
+                                Toast.LENGTH_SHORT
+                            ).show()
                             viewModel.resetState()
                         }
-                        TrimUiState.Idle -> Unit
-                        TrimUiState.Loading -> Unit
+                        TrimUiState.Idle, TrimUiState.Loading -> Unit
                     }
                 }
             }
@@ -219,15 +237,22 @@ class MainActivity : AppCompatActivity() {
             String.format(Locale.US, "%.0f KB", state.sizeBytes / 1024.0)
         }
         MaterialAlertDialogBuilder(this)
-            .setTitle("Trim Complete")
-            .setMessage("File exported: ${state.displayName} ($sizeLabel)\nLocation: ${state.pathDescription}\n\nWhat would you like to do?")
-            .setPositiveButton("Share") { _, _ ->
+            .setTitle(R.string.trim_complete_title)
+            .setMessage(
+                getString(
+                    R.string.trim_complete_message,
+                    state.displayName,
+                    sizeLabel,
+                    state.pathDescription
+                )
+            )
+            .setPositiveButton(R.string.action_share) { _, _ ->
                 shareFile(state.publicUri, isVideo)
             }
-            .setNegativeButton("Preview") { _, _ ->
+            .setNegativeButton(R.string.action_preview) { _, _ ->
                 loadMedia(state.publicUri, isVideo)
             }
-            .setNeutralButton("Dismiss", null)
+            .setNeutralButton(R.string.action_dismiss, null)
             .show()
     }
 
@@ -238,9 +263,13 @@ class MainActivity : AppCompatActivity() {
                 putExtra(Intent.EXTRA_STREAM, contentUri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(intent, "Share Trimmed Media"))
+            startActivity(Intent.createChooser(intent, getString(R.string.share_chooser_title)))
         } catch (e: Exception) {
-            Toast.makeText(this, "Failed to share: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                getString(R.string.share_failed, e.message),
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -248,14 +277,7 @@ class MainActivity : AppCompatActivity() {
         viewModel.onMediaLoaded(uri, isVideoMedia)
 
         binding.layoutEmptyState.visibility = View.GONE
-
-        if (isVideoMedia) {
-            binding.playerView.visibility = View.VISIBLE
-            binding.layoutAudioState.visibility = View.GONE
-        } else {
-            binding.playerView.visibility = View.VISIBLE
-            binding.layoutAudioState.visibility = View.VISIBLE
-        }
+        binding.playerView.visibility = View.VISIBLE
 
         player?.apply {
             setMediaItem(MediaItem.fromUri(uri))
@@ -266,7 +288,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun restoreMediaSession(session: MediaSessionState) {
         binding.layoutEmptyState.visibility = View.GONE
-        binding.layoutAudioState.isVisible = !session.isVideo
 
         player?.apply {
             setMediaItem(MediaItem.fromUri(session.uri))
@@ -293,10 +314,20 @@ class MainActivity : AppCompatActivity() {
             isEnabled = true
         }
         val clipDuration = endMs - startMs
-        binding.tvStartTime.text = "Start: ${TimeFormatter.formatMs(startMs)}"
-        binding.tvEndTime.text = "End: ${TimeFormatter.formatMs(endMs)}"
-        binding.tvSelectedDuration.text = "Clip: ${TimeFormatter.formatMs(clipDuration)}"
+        binding.tvStartTime.text = getString(R.string.time_start_format, TimeFormatter.formatMs(startMs))
+        binding.tvEndTime.text = getString(R.string.time_end_format, TimeFormatter.formatMs(endMs))
+        binding.tvSelectedDuration.text = getString(R.string.time_clip_format, TimeFormatter.formatMs(clipDuration))
         binding.btnTrim.isEnabled = (clipDuration >= 1000L)
+
+        val sourceName = viewModel.sessionState?.sourceName
+        if (!sourceName.isNullOrBlank()) {
+            binding.tvMediaInfo.isVisible = true
+            binding.tvMediaInfo.text = getString(
+                R.string.media_info_format,
+                sourceName,
+                TimeFormatter.formatMs(totalDurationMs)
+            )
+        }
     }
 
     override fun onPause() {

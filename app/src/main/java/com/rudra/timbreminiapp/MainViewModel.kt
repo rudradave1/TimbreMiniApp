@@ -2,6 +2,7 @@ package com.rudra.timbreminiapp
 
 import android.app.Application
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.rudra.timbreminiapp.trimmer.MediaTrimmer
@@ -13,6 +14,7 @@ import kotlinx.coroutines.launch
 data class MediaSessionState(
     val uri: Uri,
     val isVideo: Boolean,
+    val sourceName: String = "",
     val totalDurationMs: Long = 0L,
     val startMs: Long = 0L,
     val endMs: Long = 0L,
@@ -30,7 +32,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     fun onMediaLoaded(uri: Uri, isVideo: Boolean) {
-        sessionState = MediaSessionState(uri = uri, isVideo = isVideo)
+        sessionState = MediaSessionState(
+            uri = uri,
+            isVideo = isVideo,
+            sourceName = queryDisplayName(uri)
+        )
     }
 
     fun updateDuration(durationMs: Long) {
@@ -67,8 +73,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         sizeBytes = r.sizeBytes
                     )
                 },
-                onFailure = { TrimUiState.Error(it.message ?: "Failed to trim media") }
+                onFailure = { TrimUiState.Error(it.toUserMessageRes()) }
             )
+        }
+    }
+
+    private fun queryDisplayName(uri: Uri): String {
+        return try {
+            val resolver = getApplication<Application>().contentResolver
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (index >= 0 && cursor.moveToFirst()) cursor.getString(index).orEmpty() else ""
+                }.orEmpty()
+        } catch (_: Exception) {
+            ""
         }
     }
 

@@ -1,6 +1,7 @@
 package com.rudra.timbreminiapp
 
 import android.net.Uri
+import androidx.annotation.StringRes
 
 sealed interface TrimUiState {
     data object Idle : TrimUiState
@@ -12,5 +13,5 @@ sealed interface TrimUiState {
         val sizeBytes: Long
     ) : TrimUiState
 
-    data class Error(val message: String) : TrimUiState
+    data class Error(@StringRes val messageRes: Int) : TrimUiState
 }

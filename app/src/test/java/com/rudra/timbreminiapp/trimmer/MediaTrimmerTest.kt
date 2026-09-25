@@ -63,6 +63,41 @@ class MediaTrimmerTest {
     }
 
     @Test
+    fun `fractional seconds are preserved in the command`() {
+        val cmd = buildTrimCommand("/in.mp4", "/out.mp4", 12.345, 8.25, "mp4")
+        assertTrue(cmd.contains("-ss 12.345"))
+        assertTrue(cmd.contains("-t 8.25"))
+    }
+
+    @Test
+    fun `mime fallback maps audio mpeg to mp3`() {
+        val (ext, mime) = deriveExtensionAndMimeFromMime("audio/mpeg", isVideo = false)
+        assertEquals("mp3", ext)
+        assertEquals("audio/mpeg", mime)
+    }
+
+    @Test
+    fun `mime fallback maps matroska video to mkv`() {
+        val (ext, mime) = deriveExtensionAndMimeFromMime("video/x-matroska", isVideo = true)
+        assertEquals("mkv", ext)
+        assertEquals("video/x-matroska", mime)
+    }
+
+    @Test
+    fun `mime fallback maps mp4 audio to m4a`() {
+        val (ext, mime) = deriveExtensionAndMimeFromMime("audio/mp4", isVideo = false)
+        assertEquals("m4a", ext)
+        assertEquals("audio/mp4", mime)
+    }
+
+    @Test
+    fun `unknown mime falls back to video mp4`() {
+        val (ext, mime) = deriveExtensionAndMimeFromMime("application/octet-stream", isVideo = true)
+        assertEquals("mp4", ext)
+        assertEquals("video/mp4", mime)
+    }
+
+    @Test
     fun `paths with spaces and quotes are escaped`() {
         val cmd = buildTrimCommand("/in folder/a'b.mp4", "/out.mp4", 1.0, 2.0, "mp4")
         assertTrue(cmd.contains("'/in folder/a'\\''b.mp4'"))

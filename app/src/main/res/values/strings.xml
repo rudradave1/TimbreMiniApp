@@ -1,3 +1,40 @@
 <resources>
     <string name="app_name">Timbre Mini App</string>
+    <string name="app_title_short">Timbre Mini</string>
+
+    <string name="select_video">Select Video</string>
+    <string name="select_audio">Select Audio</string>
+
+    <string name="empty_title">No media chosen</string>
+    <string name="empty_hint">Tap a button above to load a video or audio file</string>
+
+    <string name="export_progress">Exporting clip…</string>
+
+    <string name="trim_bounds_label">TRIM BOUNDS</string>
+    <string name="time_start_placeholder">Start: 00:00</string>
+    <string name="time_end_placeholder">End: 00:00</string>
+    <string name="time_clip_placeholder">Clip: 00:00</string>
+    <string name="time_start_format">Start: %1$s</string>
+    <string name="time_end_format">End: %1$s</string>
+    <string name="time_clip_format">Clip: %1$s</string>
+    <string name="min_clip_hint">Min 1s</string>
+    <string name="media_info_format">%1$s · %2$s</string>
+
+    <string name="trim_button">Trim &amp; Save</string>
+
+    <string name="trim_complete_title">Trim Complete</string>
+    <string name="trim_complete_message">File exported: %1$s (%2$s)\nLocation: %3$s\n\nWhat would you like to do?</string>
+    <string name="action_share">Share</string>
+    <string name="action_preview">Preview</string>
+    <string name="action_dismiss">Dismiss</string>
+    <string name="share_chooser_title">Share Trimmed Media</string>
+    <string name="share_failed">Failed to share: %1$s</string>
+
+    <string name="error_read_failed">Couldn\'t read that file. It may be protected, corrupted, or the source disappeared.</string>
+    <string name="error_min_length">The clip must be at least 1 second long.</string>
+    <string name="error_unsupported">Couldn\'t trim this clip — the format may not be supported for stream copy.</string>
+    <string name="error_empty_output">Trimming didn\'t produce any output. Try a different start and end time.</string>
+    <string name="error_storage_write">Couldn\'t save the clip to storage. Free up some space and try again.</string>
+    <string name="error_cancelled">Trim was cancelled.</string>
+    <string name="error_generic">Something went wrong while trimming.</string>
 </resources>

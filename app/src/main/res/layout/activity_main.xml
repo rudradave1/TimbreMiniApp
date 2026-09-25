@@ -11,7 +11,7 @@
         android:id="@+id/tvTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Timbre Mini"
+        android:text="@string/app_title_short"
         android:textSize="22sp"
         android:textStyle="bold"
         app:layout_constraintStart_toStartOf="parent"
@@ -23,7 +23,7 @@
         android:layout_height="48dp"
         android:layout_marginTop="12dp"
         android:layout_marginEnd="6dp"
-        android:text="Select Video"
+        android:text="@string/select_video"
         app:cornerRadius="10dp"
         app:layout_constraintEnd_toStartOf="@id/btnSelectAudio"
         app:layout_constraintStart_toStartOf="parent"
@@ -36,7 +36,7 @@
         android:layout_height="48dp"
         android:layout_marginStart="6dp"
         android:layout_marginTop="12dp"
-        android:text="Select Audio"
+        android:text="@string/select_audio"
         app:cornerRadius="10dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/btnSelectVideo"
@@ -88,7 +88,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:text="No media chosen"
+                android:text="@string/empty_title"
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
@@ -97,34 +97,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:gravity="center"
-                android:text="Tap a button above to load a video or audio file"
+                android:text="@string/empty_hint"
                 android:textColor="?android:attr/textColorSecondary"
                 android:textSize="13sp" />
-        </LinearLayout>
-
-
-        <LinearLayout
-            android:id="@+id/layoutAudioState"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="?attr/colorSurfaceVariant"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:visibility="gone">
-
-            <ImageView
-                android:layout_width="64dp"
-                android:layout_height="64dp"
-                android:src="@android:drawable/ic_media_play"
-                app:tint="?attr/colorPrimary" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Audio Track Playing"
-                android:textSize="16sp"
-                android:textStyle="bold" />
         </LinearLayout>
 
 
@@ -154,7 +129,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:text="Exporting clip..."
+                    android:text="@string/export_progress"
                     android:textColor="@android:color/white"
                     android:textSize="14sp"
                     android:textStyle="bold" />
@@ -181,23 +156,37 @@
             android:layout_height="wrap_content">
 
             <TextView
+                android:id="@+id/tvMediaInfo"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <TextView
                 android:id="@+id/tvTrimLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.08"
-                android:text="TRIM BOUNDS"
+                android:text="@string/trim_bounds_label"
                 android:textColor="?android:attr/textColorSecondary"
                 android:textSize="11sp"
                 android:textStyle="bold"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
+                app:layout_constraintTop_toBottomOf="@id/tvMediaInfo" />
 
             <TextView
                 android:id="@+id/tvStartTime"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Start: 00:00"
+                android:text="@string/time_start_placeholder"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 app:layout_constraintStart_toStartOf="parent"
@@ -212,7 +201,7 @@
                 android:background="@drawable/badge_background"
                 android:paddingHorizontal="8dp"
                 android:paddingVertical="2dp"
-                android:text="Clip: 00:00"
+                android:text="@string/time_clip_placeholder"
                 android:textColor="?attr/colorPrimary"
                 android:textSize="12sp"
                 android:textStyle="bold"
@@ -225,7 +214,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="End: 00:00"
+                android:text="@string/time_end_placeholder"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 app:layout_constraintEnd_toEndOf="parent"
@@ -251,7 +240,7 @@
         android:layout_width="0dp"
         android:layout_height="52dp"
         android:enabled="false"
-        android:text="Trim &amp; Save"
+        android:text="@string/trim_button"
         android:textSize="15sp"
         app:cornerRadius="12dp"
         app:layout_constraintBottom_toBottomOf="parent"
