@@ -247,10 +247,11 @@ class MediaTrimmer(private val context: Context) {
 
 internal fun deriveExtensionAndMime(formatName: String, isVideo: Boolean): Pair<String, String> {
     return when {
-        formatName.contains("matroska") && isVideo -> "mkv" to "video/x-matroska"
-        formatName.contains("matroska") && !isVideo -> "mka" to "audio/x-matroska"
+        // WebM first because FFprobe reports webm containers as "matroska,webm".
         formatName.contains("webm") && isVideo -> "webm" to "video/webm"
         formatName.contains("webm") && !isVideo -> "webm" to "audio/webm"
+        formatName.contains("matroska") && isVideo -> "mkv" to "video/x-matroska"
+        formatName.contains("matroska") && !isVideo -> "mka" to "audio/x-matroska"
         formatName.contains("mp3") -> "mp3" to "audio/mpeg"
         formatName.contains("ogg") -> "ogg" to (if (isVideo) "video/ogg" else "audio/ogg")
         formatName.contains("wav") -> "wav" to "audio/x-wav"

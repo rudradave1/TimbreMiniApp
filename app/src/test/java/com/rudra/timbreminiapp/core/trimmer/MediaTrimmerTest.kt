@@ -15,17 +15,31 @@ class MediaTrimmerTest {
     }
 
     @Test
-    fun `matroska container maps to mkv for video`() {
-        val (ext, mime) = deriveExtensionAndMime("matroska,webm", isVideo = true)
+    fun `pure matroska container maps to mkv for video`() {
+        val (ext, mime) = deriveExtensionAndMime("matroska", isVideo = true)
         assertEquals("mkv", ext)
         assertEquals("video/x-matroska", mime)
     }
 
     @Test
-    fun `matroska container maps to mka for audio`() {
-        val (ext, mime) = deriveExtensionAndMime("matroska,webm", isVideo = false)
+    fun `pure matroska container maps to mka for audio`() {
+        val (ext, mime) = deriveExtensionAndMime("matroska", isVideo = false)
         assertEquals("mka", ext)
         assertEquals("audio/x-matroska", mime)
+    }
+
+    @Test
+    fun `webm container maps to webm for video even when ffprobe reports matroska comma webm`() {
+        val (ext, mime) = deriveExtensionAndMime("matroska,webm", isVideo = true)
+        assertEquals("webm", ext)
+        assertEquals("video/webm", mime)
+    }
+
+    @Test
+    fun `webm audio maps to webm`() {
+        val (ext, mime) = deriveExtensionAndMime("matroska,webm", isVideo = false)
+        assertEquals("webm", ext)
+        assertEquals("audio/webm", mime)
     }
 
     @Test
