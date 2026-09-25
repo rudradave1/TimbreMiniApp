@@ -43,6 +43,9 @@ class MainActivity : AppCompatActivity() {
 
     private val positionHandler = Handler(Looper.getMainLooper())
 
+    // Polling every 100ms while playing exoplayer is resource cheap
+    // and it keeps preview in trim range
+
     private val boundaryCheckRunnable = object : Runnable {
         override fun run() {
             val p = player
@@ -83,9 +86,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupWindowInsets() {
-        // The status region (which includes the camera cutout) is drawn as a
-        // darker-red backdrop behind the system bar; the app bar itself sits
-        // below it so its title stays vertically centered and clear of icons.
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val params = binding.vStatusBarBackdrop.layoutParams
@@ -101,6 +101,8 @@ class MainActivity : AppCompatActivity() {
             binding.playerView.player = exoPlayer
 
             exoPlayer.addListener(object : Player.Listener {
+                // Duration is unknown until the player is ready, so the slider
+                // is built here abd not at load time.
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     if (playbackState == Player.STATE_READY) {
                         val duration = exoPlayer.duration
@@ -119,6 +121,7 @@ class MainActivity : AppCompatActivity() {
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     if (isPlaying) {
+                        // Seek into range once, then let the runnable keep it there.
                         val session = viewModel.sessionState
                         if (session != null && session.endMs > session.startMs) {
                             if (exoPlayer.currentPosition >= session.endMs || exoPlayer.currentPosition < session.startMs) {
@@ -132,6 +135,8 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
+                    // if player is dead drop it, reset the UI to
+                    // the empty state and tell the user why.
                     exoPlayer.stop()
                     exoPlayer.clearMediaItems()
                     positionHandler.removeCallbacks(boundaryCheckRunnable)
@@ -199,6 +204,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onStopTrackingTouch(slider: RangeSlider) {
+                // Commit bounds only on release. so dragging never messes with the
+                // playing preview, then jump preview to the new start.
                 val values = slider.values
                 if (values.size >= 2) {
                     val start = values[0].toLong()
@@ -228,8 +235,7 @@ class MainActivity : AppCompatActivity() {
                         val progress = state as TrimUiState.Loading
                         binding.btnTrim.isEnabled = false
                         binding.rangeSlider.isEnabled = false
-                        // Stay indeterminate until FFmpeg reports anything; a fast
-                        // stream copy may finish before the first statistic arrives.
+                        // Stay indeterminate until FFmpeg reports anything.
                         binding.progressIndicator.isIndeterminate =
                             progress.fraction <= 0f || progress.fraction >= 1f
                         binding.progressIndicator.progress =
@@ -280,6 +286,8 @@ class MainActivity : AppCompatActivity() {
             String.format(Locale.US, "%.0f KB", state.sizeBytes / 1024.0)
         }
         val actions = layoutInflater.inflate(R.layout.dialog_trim_actions, null)
+        // Four actions don't fit MaterialAlertDialogBuilder's 3-button limit, https://m3.material.io/components/dialogs/
+        // so they live in a custom view inflated into the dialog.
         val dialog = MaterialAlertDialogBuilder(this)
             .setTitle(R.string.trim_complete_title)
             .setMessage(
@@ -313,6 +321,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openWithFile(state: TrimUiState.Success) {
         val intent = Intent(Intent.ACTION_VIEW).apply {
+            // Passing an appropriate mimeType so it doesn't show random app in picker
             setDataAndType(state.publicUri, state.mimeType)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }

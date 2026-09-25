@@ -25,6 +25,7 @@ import kotlin.coroutines.resume
 
 private const val TAG = "MediaTrimmer"
 
+// FFmpeg needs real paths, so we copy then probe
 class MediaTrimmer(private val context: Context) {
 
     data class TrimResult(
@@ -35,23 +36,23 @@ class MediaTrimmer(private val context: Context) {
         val sizeBytes: Long
     )
 
-    suspend fun trimMedia(
-        sourceUri: Uri,
-        startMs: Long,
-        endMs: Long,
-        isVideo: Boolean,
-        onProgress: (Float) -> Unit = {}
-    ): Result<TrimResult> = withContext(Dispatchers.IO) {
-        try {
-            // FFmpeg needs a real path, so copy the content URI into our cache.
-            val inputTemp = copyToTemp(sourceUri) ?: throw TrimError(R.string.error_read_failed)
+suspend fun trimMedia(
+            sourceUri: Uri,
+            startMs: Long,
+            endMs: Long,
+            isVideo: Boolean,
+            onProgress: (Float) -> Unit = {}
+        ): Result<TrimResult> = withContext(Dispatchers.IO) {
             try {
-                val sourceMime = runCatching { context.contentResolver.getType(sourceUri) }.getOrNull()
+                // Content URIs aren't real paths, copy to cache first
+                val inputTemp = copyToTemp(sourceUri) ?: throw TrimError(R.string.error_read_failed)
+                try {
+                    val sourceMime = runCatching { context.contentResolver.getType(sourceUri) }.getOrNull()
 
-                // Prefer the probed container; fall back to the picker MIME if probing fails.
-                val mediaInfo = runCatching {
-                    FFprobeKit.getMediaInformation(inputTemp.absolutePath)?.mediaInformation
-                }.getOrNull()
+                    // Probe the real container, the picker MIME is just a fallback
+                    val mediaInfo = runCatching {
+                        FFprobeKit.getMediaInformation(inputTemp.absolutePath)?.mediaInformation
+                    }.getOrNull()
                 val formatName = mediaInfo?.format?.lowercase().orEmpty()
                 val (ext, mime) = if (formatName.isBlank() && sourceMime != null) {
                     deriveExtensionAndMimeFromMime(sourceMime, isVideo)
@@ -66,8 +67,7 @@ class MediaTrimmer(private val context: Context) {
                 val durationSec = clipMs / 1000.0
                 val outTemp = File(context.cacheDir, "trimmed_out_${System.currentTimeMillis()}.$ext")
 
-                // Stream copy: instant and lossless, but the cut snaps to the nearest
-                // keyframe. -ss before -i seeks fast instead of decoding the whole file.
+                // Stream copy snaps to the nearest keyframe but is fast and lossless
                 val cmd = buildTrimCommand(
                     input = inputTemp.absolutePath,
                     output = outTemp.absolutePath,
@@ -87,6 +87,7 @@ class MediaTrimmer(private val context: Context) {
 
                 if (!outTemp.exists() || outTemp.length() == 0L) {
                     outTemp.delete()
+                    // Exit 0 but no output, probably bad bounds
                     throw TrimError(R.string.error_empty_output)
                 }
 
@@ -121,8 +122,7 @@ class MediaTrimmer(private val context: Context) {
         onProgress: (Float) -> Unit
     ): FfmpegOutcome =
         suspendCancellableCoroutine { cont ->
-            // The statistics callback is global, but exports are single-flight
-            // (Trim is disabled while one runs), so restore null on completion.
+            // Callback is global, exports are single-flight
             FFmpegKitConfig.enableStatisticsCallback { stats ->
                 onProgress(((stats?.time ?: 0L).toFloat() / clipMs).coerceIn(0f, 1f))
             }
@@ -176,8 +176,7 @@ class MediaTrimmer(private val context: Context) {
     ): TrimResult {
         val displayName = "trimmed_${System.currentTimeMillis()}.$ext"
 
-        // Q+ publishes to shared storage via MediaStore (no permissions needed);
-        // below Q we write to our own external files dir and share via FileProvider.
+        // MediaStore for Q+, FileProvider below
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val collection = if (isVideo) {
                 MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -230,7 +229,7 @@ class MediaTrimmer(private val context: Context) {
     }
 
     private fun openOutputStreamWithRetry(itemUri: Uri): OutputStream? {
-        // Some devices hand out a dead stream right after insert(); retry briefly.
+        // Dead stream right after insert on some devices, retry
         repeat(3) { attempt ->
             val stream = runCatching {
                 context.contentResolver.openOutputStream(itemUri, "w")
@@ -247,7 +246,7 @@ class MediaTrimmer(private val context: Context) {
 
 internal fun deriveExtensionAndMime(formatName: String, isVideo: Boolean): Pair<String, String> {
     return when {
-        // WebM first because FFprobe reports webm containers as "matroska,webm".
+        // FFprobe reports webm as "matroska,webm", check it first
         formatName.contains("webm") && isVideo -> "webm" to "video/webm"
         formatName.contains("webm") && !isVideo -> "webm" to "audio/webm"
         formatName.contains("matroska") && isVideo -> "mkv" to "video/x-matroska"
@@ -293,7 +292,9 @@ internal fun buildTrimCommand(
         append("-ss ").append(startSec).append(" ")
         append("-i ").append(quotePath(input)).append(" ")
         append("-t ").append(durationSec).append(" ")
+        // -c copy is fast but cuts on keyframes
         append("-c copy ")
+        // make_zero for negative PTS, +faststart for the mp4 family
         append("-avoid_negative_ts make_zero ")
         if (ext == "mp4" || ext == "m4a" || ext == "mov") {
             append("-movflags +faststart ")

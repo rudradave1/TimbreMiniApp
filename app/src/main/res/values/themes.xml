@@ -1,4 +1,5 @@
 <resources>
+    <!-- Dark only. NoActionBar, the toolbar is a plain view -->
     <style name="Theme.TimbreMiniApp" parent="Theme.Material3.Dark.NoActionBar">
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorOnPrimary">@color/colorOnPrimary</item>

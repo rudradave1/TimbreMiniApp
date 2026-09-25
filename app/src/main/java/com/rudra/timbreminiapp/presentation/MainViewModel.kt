@@ -22,6 +22,7 @@ data class MediaSessionState(
     val endMs: Long = 0L
 )
 
+// App context so the trimmer outlives the activity.
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val trimmer = MediaTrimmer(application)
@@ -29,6 +30,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow<TrimUiState>(TrimUiState.Idle)
     val uiState: StateFlow<TrimUiState> = _uiState.asStateFlow()
 
+    // Loaded file, read straight from the UI and player
     var sessionState: MediaSessionState? = null
         private set
 
@@ -62,6 +64,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 endMs = session.endMs,
                 isVideo = session.isVideo,
                 onProgress = { fraction ->
+                    // Drop stats that land after the state moves on
                     if (_uiState.value is TrimUiState.Loading) {
                         _uiState.value = TrimUiState.Loading(fraction, clipMs)
                     }
@@ -85,6 +88,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun queryDisplayName(uri: Uri): String {
+        // Just a label, never let this block loading
         return try {
             val resolver = getApplication<Application>().contentResolver
             resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
@@ -98,6 +102,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun resetState() {
+        // One-shot, then back to idle
         _uiState.value = TrimUiState.Idle
     }
 }

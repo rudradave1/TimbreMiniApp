@@ -74,3 +74,18 @@ Unit tests (container→extension mapping, FFmpeg command building):
 - **Rotation.** Not locked; the player and any in-flight export survive
   rotation and fold/split via `configChanges`.
 - Requires Android 8.0 (API 26)+.
+
+## References
+
+- FFmpegKit usage on Android: the library's official Android guide, covers the
+  API used here (executeAsync, statistics callback, FFprobe, cancel). https://github.com/arthenica/ffmpeg-kit/wiki/Android
+- Maintained ffmpeg-kit fork: drop-in replacement after the original was
+  archived in 2025. https://github.com/ffmpegkit-maintained/ffmpeg
+- FFmpeg seeking: why `-ss` seeks fast and what `-c copy` gives up. https://trac.ffmpeg.org/wiki/Seeking
+- KotlinFFMpeg: example project I read first to learn the trim flow. https://github.com/umair13adil/KotlinFFMpeg
+- MediaStore save flow: the `IS_PENDING` pattern that makes saving
+  permission-free on Android 10+. https://developer.android.com/training/data-storage/shared/media
+- Photo picker: system video picker, no read permission needed. https://developer.android.com/training/data-storage/shared/photopicker
+- GetContent: system audio picker, same idea. https://developer.android.com/training/data-storage/shared/documents-files
+- FileProvider: shares the below-Android-10 output with other apps. https://developer.android.com/training/sharing/send
+- Media3 ExoPlayer: the preview player (PlayerView, listeners). https://developer.android.com/media/media3/exoplayer

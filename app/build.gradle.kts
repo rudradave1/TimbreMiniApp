@@ -24,6 +24,7 @@ android {
 
     buildTypes {
         release {
+            // Minify off, the FFmpeg libs already make the APK big
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -38,6 +39,7 @@ android {
     }
 
     lint {
+        // Lint is flaky here, don't gate releases on it
         checkReleaseBuilds = false
     }
 
@@ -62,6 +64,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.5.1")
     implementation("androidx.media3:media3-common:1.5.1")
 
+    // Maintained FFmpegKit fork, arm64-v8a only
     implementation("dev.ffmpegkit-maintained:ffmpeg-kit-free-81:8.1.7")
 
     testImplementation(libs.junit)

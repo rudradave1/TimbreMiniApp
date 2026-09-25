@@ -4,6 +4,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 object TimeFormatter {
+    // mm:ss, or h:mm:ss over an hour. Locale.US keeps it stable
     fun formatMs(ms: Long): String {
         val totalSeconds = TimeUnit.MILLISECONDS.toSeconds(ms)
         val hours = totalSeconds / 3600
